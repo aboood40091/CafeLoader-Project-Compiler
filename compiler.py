@@ -187,6 +187,7 @@ class Project:
 
         linker.buildCtorList()
         self.buildPatches()
+        self.setAddressBin()
 
         print('\n' + '=' * 50 + '\n')
 
@@ -195,8 +196,8 @@ class Project:
         for module in self.modules:
             patches.update(module.getPatches())
 
+        patchdata = struct.pack('>H', len(patches))
         if patches:
-            patchdata = struct.pack('>H', len(patches))
             for address, data in patches.items():
                 rawaddress = bytes.fromhex(address)
                 rawdata = bytes.fromhex(data)
@@ -204,8 +205,13 @@ class Project:
                 patchdata += rawaddress
                 patchdata += rawdata
 
-            with open('Out/Patches.hax', 'wb') as f:
-                f.write(patchdata)
+        with open('Out/Patches.hax', 'wb') as f:
+            f.write(patchdata)
+
+    def setAddressBin(self):
+        addrdata = struct.pack('>2I', addrconv.symbols['textAddr'], addrconv.symbols['dataAddr'])
+        with open('Out/Addr.bin', 'wb') as f:
+            f.write(addrdata)
 
     def buildGPJ(self):
         fileList = ''
@@ -316,6 +322,7 @@ def copyOutFiles():
     if not os.path.isdir('OutProj'):
         os.mkdir('OutProj')
 
+    shutil.copy(sys.argv[1]+'/Out/Addr.bin', 'OutProj/Addr.bin')
     shutil.copy(sys.argv[1]+'/Out/Patches.hax', 'OutProj/Patches.hax')
     shutil.copy(sys.argv[1]+'/Out/Code.bin', 'OutProj/Code.bin')
     shutil.copy(sys.argv[1]+'/Out/Data.bin', 'OutProj/Data.bin')
