@@ -158,7 +158,6 @@ class Module:
 class Project:
     def __init__(self, proj):
         self.splitSections = proj.get('SplitSections', True)
-        self.symtable = proj.get('SymTable', None)
         self.genHeader = proj.get('BuildHeader', False)
         self.include = proj.get('Include', None)
         self.name = proj['Name']
