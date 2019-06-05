@@ -1,17 +1,15 @@
+from elf import round_up
 
 symbols = {}
 diffs = []
 
 def parseAddrFile(lines):
-    global text, data, textAddr, dataAddr
+    global text, data
     for line in lines:
         line = line.strip().replace(' ', '')
 
         if not line or line.startswith('#'):
             pass
-
-        elif line.startswith('text='): text = eval(line.split('text=')[1])
-        elif line.startswith('data='): data = eval(line.split('data=')[1])
         
         elif line.startswith('-'):
             symentry = line.split('=')
@@ -26,6 +24,9 @@ def parseAddrFile(lines):
             diff = eval(new)
             diffs.append((start, end, diff))
 
+    symbols['dataAddr'] = round_up(symbols['dataAddr'], 8)
+    symbols['dataAddr'] += 8
+
 def loadAddrFile(name):
     global region
     region = name
@@ -37,14 +38,9 @@ def loadAddrFile(name):
         parseAddrFile(f.readlines())
 
 def convert(address, fixWriteProtection=False):
-    if address < 0x10000000:
-        segment = text
-    else:
-        segment = data
-
     for diff in diffs:
         if diff[0] <= address < diff[1]:
-            addr = address + diff[2] + segment
+            addr = address + diff[2]
             return addr
 
     raise ValueError("Invalid or unimplemented address: 0x%x" %address)
