@@ -113,7 +113,7 @@ class Module:
     def buildAsm(self, fn):
         print("Assembling '%s'" %fn)
         obj = os.path.basename(fn+'.o')
-        cmd = "%spowerpc-eabi-as -I ../include %s -o objs/%s" %(GCC_PATH, fn, obj)
+        cmd = "%spowerpc-eabi-as -I ../files/include %s -o objs/%s" %(GCC_PATH, fn, obj)
         error = subprocess.call(cmd)
         if error:
             print('Build failed!!')
