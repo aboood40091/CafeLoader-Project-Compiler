@@ -263,6 +263,7 @@ def buildProject(proj):
     os.chdir('..')
 
 def patchRpx(proj):
+    print("Decompressing RPX...")
     elfName = '%s.elf' % os.path.splitext(rpx)[0]
     rpxName = '%s_2.rpx' % os.path.splitext(rpx)[0]
 
@@ -273,7 +274,10 @@ def patchRpx(proj):
 
     assert os.path.isfile(elfName)
 
+    print("Loading ELF...")
     elfObj = ELF(elfName)
+
+    print("Loading hax ELF...")
     haxObj = ELF(elfName2)
 
     rplFileInfo = elfObj.secHeadEnts.pop()
@@ -385,6 +389,8 @@ def patchRpx(proj):
     if not dataSections or dataSections[0] == bss:
         raise RuntimeError("Can't add ctors.")
 
+
+    print("Adding Ctors (if any)...")
     ctorsSec = ELF.SectionHeader32(b'\0' * 40, 0, '>')
     ctorsSec.nameIdx = 0  # shStrBase; elfObj.shStrTable.data += b'.ctorsHaxx\0'; shStrBase += 11
     ctorsSec.type = 1
@@ -436,10 +442,17 @@ def patchRpx(proj):
     if symtab and strtab:
         symtab.link = elfObj.secHeadEnts.index(strtab)
 
+    print("Applying patches...")
     if patches:
         oText = elfObj.getSectionByName('.text')
+        oRelaText = elfObj.getSectionByName('.rela.text')
+
         oRoData = elfObj.getSectionByName('.rodata')
+        oRelaRoData = elfObj.getSectionByName('.rela.rodata')
+
         oData = elfObj.getSectionByName('.data')
+        oRelaData = elfObj.getSectionByName('.rela.data')
+
         oBss = elfObj.getSectionByName('.bss')
 
         for address, data in patches.items():
@@ -448,15 +461,16 @@ def patchRpx(proj):
 
             if oText.vAddr <= address < addrconv.symbols['textAddr']:
                 toPatch = oText
+                oRela = oRelaText
 
             elif min(oRoData.vAddr, oData.vAddr, oBss.vAddr) <= address < addrconv.symbols['dataAddr']:
                 if oRoData.vAddr <= address < oRoData.vAddr + len(oRoData.data):
                     toPatch = oRoData
-                    oRela = elfObj.getSectionByName('.rela.rodata')
+                    oRela = oRelaRoData
 
                 elif oData.vAddr <= address < oData.vAddr + len(oData.data):
                     toPatch = oData
-                    oRela = elfObj.getSectionByName('.rela.data')
+                    oRela = oRelaData
 
                 elif oBss.vAddr <= address < oBss.vAddr + len(oBss.data):
                     print("Patching .bss is not possible.")
@@ -468,29 +482,32 @@ def patchRpx(proj):
                     print("Skipping patch at %s" % hex(address))
                     continue
 
-                toRemove = -1
-
-                for i, rela in enumerate(oRela.relocations):
-                    if rela.offset == address:
-                        toRemove = i
-                        break
-
-                if toRemove != -1:
-                    del oRela.relocations[toRemove]
-
             else:
                 print("Patch at unknown region.")
                 print("Skipping patch at %s" % hex(address))
                 continue
 
+            toRemove = -1
+
+            for i, rela in enumerate(oRela.relocations):
+                if rela.offset in [address + i for i in range(len(rawdata))]:
+                    print("Found relocation at %s. Removing..." % hex(rela.offset))
+                    toRemove = i
+                    break
+
+            if toRemove != -1:
+                del oRela.relocations[toRemove]
+
             addr = address - toPatch.vAddr
             toPatch.data[addr:addr + len(rawdata)] = rawdata
             print("Patched %d bytes at %s" % (len(rawdata), hex(address)))
 
+    print("Saving ELF...")
     buf = elfObj.save()
     with open(elfName, 'wb') as out:
         out.write(buf)
 
+    print("Compressing RPX...")
     DETACHED_PROCESS = 0x00000008
     subprocess.call('"%s" -c "%s" "%s"' % (wiiurpxtool, elfName, rpxName), creationflags=DETACHED_PROCESS)
 
