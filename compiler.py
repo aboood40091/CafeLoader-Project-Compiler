@@ -4,11 +4,10 @@
 import sys, os, shutil, yaml, subprocess, struct
 import elftools.elf.elffile
 import addrconv
+from elf import ELF
 
 
 # Change the following
-GCC_PATH = 'C:/devkitPro/devkitPPC/bin/'
-OBJ_PATH = 'C:/devkitPro/devkitPPC/powerpc-eabi/bin/'
 GHS_PATH = 'D:/Greenhills/ghs/multi5327/'
 
 
@@ -18,9 +17,12 @@ primaryTarget=ppc_standalone.tgt
 \t-bsp generic
 \t-cpu=espresso
 \t-object_dir=objs
-\t-Ogeneral
+\t-Ospeed
 \t--g++
+\t--no_debug
 \t--no_rtti
+\t-Omemfuncs
+\t-Ostrfuncs
 \t-DREGION_%s
 \t-DCODE_ADDR=0x%x
 \t-DDATA_ADDR=0x%x
@@ -29,13 +31,20 @@ primaryTarget=ppc_standalone.tgt
 """
 
 SymTableTemplate = """
-SECTIONS {
-	. = textAddr;
-	.text : {}
-	. = dataAddr;
-	.rodata : {}
-	.data : {}
-	.bss : {}
+MEMORY 
+{
+    codearea : origin = %s, length = %s
+    dataarea : origin = %s, length = %s
+}
+
+OPTION("-append")
+
+SECTIONS 
+{
+    .text : > codearea
+    .rodata : > dataarea
+    .data : > dataarea
+    .bss : > dataarea
 }"""
 
 
@@ -84,19 +93,6 @@ class Linker:
         instr |= 0x48000001
         return "%x" %instr
 
-    def buildCtorList(self):
-        ctors = []
-        for symbol in self.symbols:
-            if symbol.startswith('__sti___'):
-                ctors.append(self.getSymbol(symbol))
-
-        data = struct.pack('>I', len(ctors))
-        for ctor in ctors:
-            data += struct.pack('>I', ctor)
-
-        with open('Out/Ctors.bin', 'wb') as f:
-            f.write(data)
-
 class Module:
     def __init__(self, fn):
         self.name = os.path.splitext(fn)[0]
@@ -118,7 +114,7 @@ class Module:
     def buildAsm(self, fn):
         print("Assembling '%s'" %fn)
         obj = os.path.basename(fn+'.o')
-        cmd = "%spowerpc-eabi-as -I ../files/include %s -o objs/%s" %(GCC_PATH, fn, obj)
+        cmd = "%sasppc -I ../files/include %s -o objs/%s" %(GHS_PATH, fn, obj)
         error = subprocess.call(cmd)
         if error:
             print('Build failed!!')
@@ -184,7 +180,6 @@ class Project:
             if self.genHeader:
                 self.buildHeader('Code')
 
-        linker.buildCtorList()
         self.buildPatches()
         self.setAddressBin()
 
@@ -256,16 +251,24 @@ class Project:
         out = self.name + '.o'
         symfiles = '-T %s' %symtable
 
+        textAddr = addrconv.symbols['textAddr']
+        dataAddr = addrconv.symbols['dataAddr']
+
         with open("project.ld", "w+") as symfile:
-            symfile.write(SymTableTemplate)
+            symfile.write(SymTableTemplate % (
+                hex(textAddr),
+                hex(0x10000000 - textAddr),
+                hex(dataAddr),
+                hex(0xC0000000 - dataAddr),
+            ))
 
         symfiles += ' -T project.ld'
 
         syms = ''
         for sym, addr in addrconv.symbols.items():
-            syms += ' -defsym=%s=0x%x' %(sym, addr)
+            syms += ' -D%s=0x%x' %(sym, addr)
 
-        cmd = '%spowerpc-eabi-ld %s%s -o "%s" ' %(GCC_PATH, symfiles, syms, out)
+        cmd = '%selxr %s%s -o "%s" ' %(GHS_PATH, symfiles, syms, out)
         cmd += ' '.join(self.objfiles)
         error = subprocess.call(cmd)
         if error:
@@ -277,18 +280,22 @@ class Project:
 
     def copyout(self):
         if self.splitSections:
-            self.objcopy('-j .text', 'Code')
-            self.objcopy('-j .rodata -j .data -j .bss', 'Data')
+            self.objcopy(('.text',), 'Code')
+            self.objcopy(('.rodata', '.data'), 'Data')
         else:
-            self.objcopy('', 'Code')
+            raise NotImplementedError
 
-    def objcopy(self, section, out):
-        cmd = '%sobjcopy -O binary %s "%s.o" Out/%s.bin' %(OBJ_PATH, section, self.name, out)
-        error = subprocess.call(cmd)
-        if error:
-            print('Objcopy failed!!')
-            print('Error code: %i' %error)
-            sys.exit(error)
+    def objcopy(self, sections, out):
+        obj = ELF("%s.o" %self.name)
+
+        outBuffer = bytearray()
+        for section in sections:
+            sectionObj = obj.getSectionByName(section)
+            if sectionObj:
+                outBuffer += sectionObj.data
+
+        with open('Out/%s.bin' %out, 'wb') as f:
+            f.write(outBuffer)
 
     def buildHeader(self, binfile):
         with open('Out/%s.bin' %binfile, 'rb') as f:
@@ -325,7 +332,6 @@ def copyOutFiles():
     shutil.copy(sys.argv[1]+'/Out/Patches.hax', 'OutProj/Patches.hax')
     shutil.copy(sys.argv[1]+'/Out/Code.bin', 'OutProj/Code.bin')
     shutil.copy(sys.argv[1]+'/Out/Data.bin', 'OutProj/Data.bin')
-    shutil.copy(sys.argv[1]+'/Out/Ctors.bin', 'OutProj/Ctors.bin')
 
 def main():
     global linker
