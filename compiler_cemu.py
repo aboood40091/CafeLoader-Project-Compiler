@@ -8,8 +8,6 @@ from elf import ELF, round_up
 
 
 # Change the following
-GCC_PATH = 'C:/devkitPro/devkitPPC/bin/'
-OBJ_PATH = 'C:/devkitPro/devkitPPC/powerpc-eabi/bin/'
 GHS_PATH = 'D:/Greenhills/ghs/multi5327/'
 wiiurpxtool = 'D:/NSMBU RE/v1.3.0/code/wiiurpxtool.exe'
 
@@ -22,9 +20,12 @@ primaryTarget=ppc_standalone.tgt
 \t-bsp generic
 \t-cpu=espresso
 \t-object_dir=objs
-\t-Ogeneral
+\t-Ospeed
 \t--g++
+\t--no_debug
 \t--no_rtti
+\t-Omemfuncs
+\t-Ostrfuncs
 \t-DCemu
 \t-DREGION_%s
 \t-DCODE_ADDR=0x%x
@@ -34,13 +35,20 @@ primaryTarget=ppc_standalone.tgt
 """
 
 SymTableTemplate = """
-SECTIONS {
-	. = textAddr;
-	.text : {}
-	. = dataAddr;
-	.rodata : {}
-	.data : {}
-	.bss : {}
+MEMORY 
+{
+    codearea : origin = %s, length = %s
+    dataarea : origin = %s, length = %s
+}
+
+OPTION("-append")
+
+SECTIONS 
+{
+    .text : > codearea
+    .rodata : > dataarea
+    .data : > dataarea
+    .bss : > dataarea
 }"""
 
 project = None
@@ -113,7 +121,7 @@ class Module:
     def buildAsm(self, fn):
         print("Assembling '%s'" %fn)
         obj = os.path.basename(fn+'.o')
-        cmd = "%spowerpc-eabi-as -I ../files/include %s -o objs/%s" %(GCC_PATH, fn, obj)
+        cmd = "%sasppc -I ../files/include %s -o objs/%s" %(GHS_PATH, fn, obj)
         error = subprocess.call(cmd)
         if error:
             print('Build failed!!')
@@ -228,20 +236,28 @@ class Project:
         out = self.name + '.o'
         symfiles = '-T %s' %symtable
 
+        textAddr = addrconv.symbols['textAddr']
+        dataAddr = addrconv.symbols['dataAddr']
+
         with open("project.ld", "w+") as symfile:
-            symfile.write(SymTableTemplate)
+            symfile.write(SymTableTemplate % (
+                hex(textAddr),
+                hex(0x10000000 - textAddr),
+                hex(dataAddr),
+                hex(0xC0000000 - dataAddr),
+            ))
 
         symfiles += ' -T project.ld'
 
         syms = ''
         for sym, addr in addrconv.symbols.items():
-            syms += ' -defsym=%s=0x%x' %(sym, addr)
+            syms += ' -D%s=0x%x' %(sym, addr)
 
         if buildAsRelocatable:
-            cmd = '%spowerpc-eabi-ld -r %s%s -o "%s" ' %(GCC_PATH, symfiles, syms, out)
+            cmd = '%selxr -r %s%s -o "%s" ' %(GHS_PATH, symfiles, syms, out)
 
         else:
-            cmd = '%spowerpc-eabi-ld %s%s -o "%s" ' %(GCC_PATH, symfiles, syms, out)
+            cmd = '%selxr %s%s -o "%s" ' %(GHS_PATH, symfiles, syms, out)
 
         cmd += ' '.join(self.objfiles)
         error = subprocess.call(cmd)
@@ -289,11 +305,6 @@ def patchRpx(proj):
     bss = haxObj.getSectionByName('.bss')
     symtab = haxObj.getSectionByName('.symtab')
     strtab = haxObj.getSectionByName('.strtab')
-
-    ctors = []
-    for symbol in linker.symbols:
-        if symbol.startswith('__sti___'):
-            ctors.append(linker.getSymbol(symbol))
 
     patches = {}
     for module in project.modules:
@@ -385,26 +396,8 @@ def patchRpx(proj):
     dataSections = sorted(dataSections, key=lambda a: a.vAddr)
 
     rplFileInfo.data[4:8] = struct.pack('>I', int.from_bytes(rplFileInfo.data[4:8], 'big') + len(text.data))
-
-    if not dataSections or dataSections[0] == bss:
-        raise RuntimeError("Can't add ctors.")
-
-
-    print("Adding Ctors (if any)...")
-    ctorsSec = ELF.SectionHeader32(b'\0' * 40, 0, '>')
-    ctorsSec.nameIdx = 0  # shStrBase; elfObj.shStrTable.data += b'.ctorsHaxx\0'; shStrBase += 11
-    ctorsSec.type = 1
-    ctorsSec.flags = 3
-    ctorsSec.vAddr = round_up(dataSections[-1].vAddr + len(dataSections[-1].data), 4)
-    ctorsSec.addrAlign = 4
-
-    assert dataSections[0].vAddr == addrconv.symbols['dataAddr']; dataSections[0].vAddr -= 8
-    dataSections[0].data = bytearray(struct.pack('>4xI', ctorsSec.vAddr)) + dataSections[0].data
-    ctorsSec.data = bytearray(struct.pack('>%dI' % (len(ctors)+1), len(ctors), *ctors))
-
-    elfObj.secHeadEnts.append(ctorsSec)
-
-    rplFileInfo.data[12:16] = struct.pack('>I', int.from_bytes(rplFileInfo.data[12:16], 'big') + (ctorsSec.vAddr - addrconv.symbols['dataAddr'] + 8) + len(ctorsSec.data))
+    if dataSections:
+        rplFileInfo.data[12:16] = struct.pack('>I', int.from_bytes(rplFileInfo.data[12:16], 'big') + dataSections[-1].vAddr - addrconv.symbols['dataAddr'] + len(dataSections[-1].data))
 
     elfObj.secHeadEnts.append(rplCRCs)
     elfObj.secHeadEnts.append(rplFileInfo)

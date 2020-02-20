@@ -24,8 +24,9 @@ def parseAddrFile(lines):
             diff = eval(new)
             diffs.append((start, end, diff))
 
-    symbols['dataAddr'] = round_up(symbols['dataAddr'], 8)
-    symbols['dataAddr'] += 8
+    symbols['textAddr'] = round_up(symbols['textAddr'], 32)
+    symbols['dataAddr'] = round_up(symbols['dataAddr'], 32)
+    assert symbols['textAddr'] < symbols['dataAddr']
 
 def loadAddrFile(name):
     global region
