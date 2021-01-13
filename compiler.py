@@ -7,7 +7,7 @@ import addrconv
 from elf import ELF
 
 
-# Change the following
+# Change the following (use / instead of \)
 GHS_PATH = 'D:/Greenhills/ghs/multi5327/'
 
 
@@ -114,7 +114,7 @@ class Module:
     def buildAsm(self, fn):
         print("Assembling '%s'" %fn)
         obj = os.path.basename(fn+'.o')
-        cmd = "%sasppc -I ../files/include %s -o objs/%s" %(GHS_PATH, fn, obj)
+        cmd = '"%s" -I ../files/include %s -o objs/%s' %(os.path.join(GHS_PATH, 'asppc.exe'), fn, obj)
         error = subprocess.call(cmd)
         if error:
             print('Build failed!!')
@@ -231,7 +231,7 @@ class Project:
     def buildGHS(self):
         print("*** Building '%s' ***\n" %self.name)
 
-        cmd = "%sgbuild -top project.gpj" %(GHS_PATH)
+        cmd = '"%s" -top project.gpj' %(os.path.join(GHS_PATH, 'gbuild.exe'))
         error = subprocess.call(cmd)
         if error:
             print('Build failed!!')
@@ -268,7 +268,7 @@ class Project:
         for sym, addr in addrconv.symbols.items():
             syms += ' -D%s=0x%x' %(sym, addr)
 
-        cmd = '%selxr %s%s -o "%s" ' %(GHS_PATH, symfiles, syms, out)
+        cmd = '"%s" %s%s -o "%s" ' %(os.path.join(GHS_PATH, 'elxr.exe'), symfiles, syms, out)
         cmd += ' '.join(self.objfiles)
         error = subprocess.call(cmd)
         if error:
@@ -334,13 +334,17 @@ def copyOutFiles():
     shutil.copy(sys.argv[1]+'/Out/Data.bin', 'OutProj/Data.bin')
 
 def main():
-    global linker
     if len(sys.argv) < 3:
         printUsage()
         return
 
+    if not os.path.isfile(os.path.join(GHS_PATH, 'gbuild.exe')):
+        print("Could not locate MULTI Green Hills Software! Did you set its path?")
+        return
+
     addrconv.loadAddrFile(sys.argv[2])
 
+    global linker
     linker = Linker()
     buildProject(sys.argv[1])
 
