@@ -7,11 +7,9 @@ import addrconv_cemu as addrconv
 from elf import ELF, round_up
 
 
-# Change the following
+# Change the following (use / instead of \)
 GHS_PATH = 'D:/Greenhills/ghs/multi5327/'
 wiiurpxtool = 'D:/NSMBU RE/v1.3.0/code/wiiurpxtool.exe'
-
-rpx = ''
 
 
 TEMPLATE = """#!gbuild
@@ -121,7 +119,7 @@ class Module:
     def buildAsm(self, fn):
         print("Assembling '%s'" %fn)
         obj = os.path.basename(fn+'.o')
-        cmd = "%sasppc -I ../files/include %s -o objs/%s" %(GHS_PATH, fn, obj)
+        cmd = '"%s" -I ../files/include %s -o objs/%s' %(os.path.join(GHS_PATH, 'asppc'), fn, obj)
         error = subprocess.call(cmd)
         if error:
             print('Build failed!!')
@@ -212,7 +210,7 @@ class Project:
     def buildGHS(self):
         print("*** Building '%s' ***\n" %self.name)
 
-        cmd = "%sgbuild -top project.gpj" %(GHS_PATH)
+        cmd = '"%s" -top project.gpj' %(os.path.join(GHS_PATH, 'gbuild'))
         error = subprocess.call(cmd)
         if error:
             print('Build failed!!')
@@ -254,10 +252,10 @@ class Project:
             syms += ' -D%s=0x%x' %(sym, addr)
 
         if buildAsRelocatable:
-            cmd = '%selxr -r %s%s -o "%s" ' %(GHS_PATH, symfiles, syms, out)
+            cmd = '"%s" -r %s%s -o "%s" ' %(os.path.join(GHS_PATH, 'elxr'), symfiles, syms, out)
 
         else:
-            cmd = '%selxr %s%s -o "%s" ' %(GHS_PATH, symfiles, syms, out)
+            cmd = '"%s" %s%s -o "%s" ' %(os.path.join(GHS_PATH, 'elxr'), symfiles, syms, out)
 
         cmd += ' '.join(self.objfiles)
         error = subprocess.call(cmd)
@@ -278,7 +276,7 @@ def buildProject(proj):
     project.build()
     os.chdir('..')
 
-def patchRpx(proj):
+def patchRpx(proj, rpx):
     print("Decompressing RPX...")
     elfName = '%s.elf' % os.path.splitext(rpx)[0]
     rpxName = '%s_2.rpx' % os.path.splitext(rpx)[0]
@@ -509,18 +507,30 @@ def patchRpx(proj):
     print('\n' + '=' * 50 + '\n')
 
 def main():
-    global linker, rpx, buildAsRelocatable
     if len(sys.argv) < 3:
         printUsage()
         return
 
+    if not os.path.isfile(os.path.join(GHS_PATH, 'gbuild.exe')):
+        print("Could not locate MULTI Green Hills Software! Did you set its path?")
+        return
+
     addrconv.loadAddrFile(sys.argv[2])
 
+    global linker, buildAsRelocatable
     linker = Linker()
     buildProject(sys.argv[1])
 
+    if not os.path.isfile(wiiurpxtool):
+        print("Could not locate wiiurpxtool.exe! Did you set its path?")
+        return
+
     rpx = sys.argv[3]
-    patchRpx(sys.argv[1])
+    if not os.path.isfile(rpx):
+        print("Could not locate the RPX file to patch! Did you correctly enter its path?")
+        return
+
+    patchRpx(sys.argv[1], rpx)
 
 if __name__ == '__main__':
     main()
