@@ -254,14 +254,8 @@ class ELF:
                 print("Section Header Entries Count:", self.secHeadNum)
                 print("Section Header Entry Size:", hex(self.secHeadEntSize))
 
-        def save(self, secHeadEnts):
+        def save(self, secHeadEnts, namesSecHeadIdx):
             outBuffer = bytearray(self.ident.save())
-
-            namesSecHeadIdx = 0
-            for i, entry in enumerate(secHeadEnts):
-                if entry.name == '.shstrtab':
-                    namesSecHeadIdx = i
-                    break
 
             size = self.size + self.ident.size
             outBuffer += struct.pack(
@@ -334,7 +328,10 @@ class ELF:
 
     def save(self):
         self.header.type = 0xFE01
-        outBuffer = bytearray(self.header.save(self.secHeadEnts))
+        return self.saveRel()
+
+    def saveRel(self):
+        outBuffer = bytearray(self.header.save(self.secHeadEnts, self.secHeadEnts.index(self.shStrTable)))
 
         align = round_up(len(outBuffer), 0x10) - len(outBuffer)
         outBuffer += b'\0' * align

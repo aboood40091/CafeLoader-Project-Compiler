@@ -12,17 +12,31 @@ GHS_PATH = 'D:/Greenhills/ghs/multi5327/'
 
 
 TEMPLATE = """#!gbuild
-primaryTarget=ppc_standalone.tgt
+primaryTarget=ppc_cos_ndebug.tgt
 [Project]
-\t-bsp generic
-\t-cpu=espresso
 \t-object_dir=objs
-\t-Ospeed
+\t--no_commons
+\t-c99
+\t-only_explicit_reg_use
 \t--g++
-\t--no_debug
+\t--link_once_templates
+\t-cpu=espresso
+\t-sda=none
+\t-kanji=shiftjis
+\t--no_exceptions
 \t--no_rtti
-\t-Omemfuncs
-\t-Ostrfuncs
+\t--no_implicit_include
+\t--implicit_typename
+\t--diag_suppress 1931,1974,1822
+\t--enable_noinline
+\t-Ospeed
+\t-no_ansi_alias
+\t--max_inlining
+\t-Onounroll
+\t--diag_suppress 381
+\t-MD
+\t-Dcafe
+\t-DEPPC
 \t-DREGION_%s
 \t-DCODE_ADDR=0x%x
 \t-DDATA_ADDR=0x%x
@@ -244,6 +258,29 @@ class Project:
 
     def link(self):
         print("Linking '%s'" %self.name)
+
+        ### Remove type 11 relations ###
+
+        for fname in self.objfiles:
+            obj = ELF(fname)
+
+            for section in obj.secHeadEnts:
+                if section.type != 4:
+                    continue
+
+                toRemove = []
+                for i, rel in enumerate(section.relocations):
+                    if (rel.info & 0xFF) == 0x0B:
+                        toRemove.append(i)
+
+                toRemove.sort(reverse=True)
+                for i in toRemove:
+                    del section.relocations[i]
+
+            with open(fname, 'wb') as outf:
+                outf.write(obj.saveRel())
+
+        ################################
 
         symtable = '../files/game_%s.x' %addrconv.region
         addrconv.convertTable('../files/game.x', symtable)
