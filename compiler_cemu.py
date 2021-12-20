@@ -13,17 +13,31 @@ wiiurpxtool = 'D:/NSMBU RE/v1.3.0/code/wiiurpxtool.exe'
 
 
 TEMPLATE = """#!gbuild
-primaryTarget=ppc_standalone.tgt
+primaryTarget=ppc_cos_ndebug.tgt
 [Project]
-\t-bsp generic
-\t-cpu=espresso
 \t-object_dir=objs
-\t-Ospeed
+\t--no_commons
+\t-c99
+\t-only_explicit_reg_use
 \t--g++
-\t--no_debug
+\t--link_once_templates
+\t-cpu=espresso
+\t-sda=none
+\t-kanji=shiftjis
+\t--no_exceptions
 \t--no_rtti
-\t-Omemfuncs
-\t-Ostrfuncs
+\t--no_implicit_include
+\t--implicit_typename
+\t--diag_suppress 1931,1974,1822
+\t--enable_noinline
+\t-Ospeed
+\t-no_ansi_alias
+\t--max_inlining
+\t-Onounroll
+\t--diag_suppress 381
+\t-MD
+\t-Dcafe
+\t-DEPPC
 \t-DCemu
 \t-DREGION_%s
 \t-DCODE_ADDR=0x%x
@@ -227,6 +241,29 @@ class Project:
 
         else:
             print("Linking '%s'" %self.name)
+
+        ### Remove type 11 relations ###
+
+        for fname in self.objfiles:
+            obj = ELF(fname)
+
+            for section in obj.secHeadEnts:
+                if section.type != 4:
+                    continue
+
+                toRemove = []
+                for i, rel in enumerate(section.relocations):
+                    if (rel.info & 0xFF) == 0x0B:
+                        toRemove.append(i)
+
+                toRemove.sort(reverse=True)
+                for i in toRemove:
+                    del section.relocations[i]
+
+            with open(fname, 'wb') as outf:
+                outf.write(obj.saveRel())
+
+        ################################
 
         symtable = '../files/game_%s.x' %addrconv.region
         addrconv.convertTable('../files/game.x', symtable)
@@ -481,7 +518,7 @@ def patchRpx(proj, rpx):
             toRemove = -1
 
             for i, rela in enumerate(oRela.relocations):
-                if rela.offset in [address + i for i in range(len(rawdata))]:
+                if address <= rela.offset < address + len(rawdata):
                     print("Found relocation at %s. Removing..." % hex(rela.offset))
                     toRemove = i
                     break
