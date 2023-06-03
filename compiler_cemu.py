@@ -3,6 +3,8 @@
 
 import copy, sys, os, shutil, yaml, subprocess, struct
 import elftools.elf.elffile
+from zlib import crc32 as z_crc32
+
 import addrconv_cemu as addrconv
 from elf import ELF, round_up
 
@@ -315,8 +317,9 @@ def buildProject(proj):
 
 def patchRpx(proj, rpx):
     print("Decompressing RPX...")
-    elfName = '%s.elf' % os.path.splitext(rpx)[0]
-    rpxName = '%s_2.rpx' % os.path.splitext(rpx)[0]
+    elfName    = '%s.elf' % os.path.splitext(rpx)[0]
+    elfNameOut = '%s_2.elf' % os.path.splitext(rpx)[0]
+    rpxName    = '%s_2.rpx' % os.path.splitext(rpx)[0]
 
     elfName2 = os.path.join(proj, '%s.o' % project.name)
 
@@ -333,6 +336,8 @@ def patchRpx(proj, rpx):
 
     rplFileInfo = elfObj.secHeadEnts.pop()
     rplCRCs = elfObj.secHeadEnts.pop()
+    
+    #assert len(rplCRCs.data) == 4 * (len(elfObj.secHeadEnts) + 2)
 
     text = haxObj.getSectionByName('.text'); assert text is not None
     rodata = haxObj.getSectionByName('.rodata')
@@ -346,8 +351,8 @@ def patchRpx(proj, rpx):
         patches.update(module.getPatches())
 
     # TODO: relocations
-    # Current Cemu version let's us get away
-    # with not doing add relocations, but
+    # Current Cemu version lets us get away
+    # with not adding relocations, but
     # Exzap said it's not guaranteed to stay that way
     """
     global buildAsRelocatable
@@ -433,6 +438,8 @@ def patchRpx(proj, rpx):
     rplFileInfo.data[4:8] = struct.pack('>I', int.from_bytes(rplFileInfo.data[4:8], 'big') + len(text.data))
     if dataSections:
         rplFileInfo.data[12:16] = struct.pack('>I', int.from_bytes(rplFileInfo.data[12:16], 'big') + dataSections[-1].vAddr - addrconv.symbols['dataAddr'] + len(dataSections[-1].data))
+
+    rplCRCs.data = b''
 
     elfObj.secHeadEnts.append(rplCRCs)
     elfObj.secHeadEnts.append(rplFileInfo)
@@ -530,16 +537,19 @@ def patchRpx(proj, rpx):
             toPatch.data[addr:addr + len(rawdata)] = rawdata
             print("Patched %d bytes at %s" % (len(rawdata), hex(address)))
 
+    rplCRCs.data = b''.join(struct.pack('>I', (z_crc32(section.data) & 0xFFFFFFFF)) for section in elfObj.secHeadEnts)
+
     print("Saving ELF...")
     buf = elfObj.save()
-    with open(elfName, 'wb') as out:
+    with open(elfNameOut, 'wb') as out:
         out.write(buf)
 
     print("Compressing RPX...")
     DETACHED_PROCESS = 0x00000008
-    subprocess.call('"%s" -c "%s" "%s"' % (wiiurpxtool, elfName, rpxName), creationflags=DETACHED_PROCESS)
+    subprocess.call('"%s" -c "%s" "%s"' % (wiiurpxtool, elfNameOut, rpxName), creationflags=DETACHED_PROCESS)
 
-    os.remove(elfName)
+    #os.remove(elfName)
+    #os.remove(elfNameOut)
 
     print('\n' + '=' * 50 + '\n')
 
