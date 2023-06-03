@@ -1,4 +1,6 @@
 # CafeLoader Project Compiler (Cemu Edition)
+**This project has been archived. You can find the new version [here](https://github.com/aboood40091/CLPC).**  
+---------------------------------------------------------------------------------  
 A set of scripts to compile projects made for [CafeLoader](https://github.com/aboood40091/CafeLoader), but to be loaded on Cemu. With help from [Kinnay](https://github.com/Kinnay) and [Exzap](https://www.reddit.com/user/Exzap/).  
 An example can be found [here](https://github.com/aboood40091/NSMBU-haxx).  
 
